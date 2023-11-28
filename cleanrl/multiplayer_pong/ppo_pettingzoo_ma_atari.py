@@ -28,7 +28,7 @@ def parse_args():
         help="if toggled, cuda will be enabled by default")
     parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, this experiment will be tracked with Weights and Biases")
-    parser.add_argument("--wandb-project-name", type=str, default="cleanRL",
+    parser.add_argument("--wandb-project-name", type=str, default="SPAR_RL_ELK",
         help="the wandb's project name")
     parser.add_argument("--wandb-entity", type=str, default=None,
         help="the entity (team) of wandb's project")
@@ -36,6 +36,7 @@ def parse_args():
         help="whether to capture videos of the agent performances (check out `videos` folder)")
     parser.add_argument("--save-model", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="whether to save model into the `runs/{run_name}` folder")
+    parser.add_argument("--num-checkpoints", type=int, default=0, help="number of checkpoint of the model to save")
     parser.add_argument("--upload-model", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to upload the saved model to huggingface")
     parser.add_argument("--hf-entity", type=str, default="",
@@ -163,7 +164,7 @@ if __name__ == "__main__":
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
-
+    checkpoint_delta = num_updates // args.num_checkpoints if args.num_checkpoints > 0 else num_updates + 2
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -319,6 +320,13 @@ if __name__ == "__main__":
         writer.add_scalar(
             "charts/SPS", int(global_step / (time.time() - start_time)), global_step
         )
+
+        # Checkpoint
+        if update % checkpoint_delta == 0:
+            model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model_{update}"
+            torch.save(agent.state_dict(), model_path)
+            print(f"checkpoint model saved to {model_path}")
+
     if args.save_model:
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
