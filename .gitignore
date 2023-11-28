@@ -24,6 +24,7 @@ cleanrl/videos/*
 benchmark/**/*.svg
 benchmark/**/*.pkl
 mjkey.txt
+*slurm*.out
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,3 +128,7 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# IDE
+.idea
+.vscode
