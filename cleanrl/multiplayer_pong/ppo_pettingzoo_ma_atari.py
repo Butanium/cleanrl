@@ -44,7 +44,7 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="pong_v3",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=20_000_000,
+    parser.add_argument("--total-timesteps", type=int, default=30_000_000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=2.5e-4,
         help="the learning rate of the optimizer")
@@ -62,6 +62,8 @@ def parse_args():
         help="the number of mini-batches")
     parser.add_argument("--update-epochs", type=int, default=4,
         help="the K epochs to update the policy")
+    parser.add_argument("--share_network", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+        help="whether to share the same network for value and policy heads")
     parser.add_argument("--norm-adv", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggles advantages normalization")
     parser.add_argument("--clip-coef", type=float, default=0.1,
@@ -84,10 +86,13 @@ def parse_args():
 
 
 class Agent(nn.Module):
-    def __init__(self, envs):
+    def __init__(self, envs, share_network=False):
         super().__init__()
         self.actor_network = atari_network(orth_init=True)
-        self.critic_network = atari_network(orth_init=True)
+        if share_network:
+            self.critic_network = self.actor_network
+        else:
+            self.critic_network = atari_network(orth_init=True)
         self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
 
@@ -143,7 +148,7 @@ if __name__ == "__main__":
 
     # env setup
     envs = get_env(args, run_name)
-    agent = Agent(envs).to(device)
+    agent = Agent(envs, args.share_network).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
