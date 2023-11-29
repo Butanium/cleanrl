@@ -24,7 +24,7 @@ cleanrl/videos/*
 benchmark/**/*.svg
 benchmark/**/*.pkl
 mjkey.txt
-*slurm*.out
+*slurm*.out*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

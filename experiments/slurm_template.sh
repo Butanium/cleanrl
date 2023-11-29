@@ -8,8 +8,5 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --nodes=1
 
-# Activate the env
-poetry shell
-which python
 
-# Your script goes here
+poetry run ${your command}
