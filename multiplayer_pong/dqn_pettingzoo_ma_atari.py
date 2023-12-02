@@ -31,14 +31,15 @@ def parse_args():
         help="if toggled, cuda will be enabled by default")
     parser.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, this experiment will be tracked with Weights and Biases")
-    parser.add_argument("--wandb-project-name", type=str, default="cleanRL",
+    parser.add_argument("--wandb-project-name", type=str, default="SPAR_RL_ELK",
         help="the wandb's project name")
     parser.add_argument("--wandb-entity", type=str, default=None,
         help="the entity (team) of wandb's project")
     parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to capture videos of the agent performances (check out `videos` folder)")
-    parser.add_argument("--save-model", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--save-model", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="whether to save model into the `runs/{run_name}` folder")
+    parser.add_argument("--num-checkpoints", type=int, default=0, help="number of checkpoint of the model to save")
     parser.add_argument("--upload-model", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to upload the saved model to huggingface")
     parser.add_argument("--hf-entity", type=str, default="",
@@ -47,11 +48,11 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="pong_v3",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=10_000_000,
+    parser.add_argument("--total-timesteps", type=int, default=20_000_000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=1e-4,
         help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=1,
+    parser.add_argument("--num-envs", type=int, default=2,
         help="the number of parallel game environments")
     parser.add_argument("--buffer-size", type=int, default=1000000,
         help="the replay memory buffer size")
@@ -75,7 +76,7 @@ def parse_args():
         help="the frequency of training")
     args = parser.parse_args()
     # fmt: on
-    assert args.num_envs == 1, "vectorized envs are not supported at the moment"
+    # assert args.num_envs == 1, "vectorized envs are not supported at the moment"
 
     return args
 
@@ -101,18 +102,15 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 if __name__ == "__main__":
     import stable_baselines3 as sb3
 
-    if sb3.__version__ < "2.0":
+    if sb3.__version__ < "1.8.0":
         raise ValueError(
-            """Ongoing migration: run the following command to install the new dependencies:
-
-poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-license]==0.28.1"  "ale-py==0.8.1" 
-"""
+            """We need to force sb3 1.8.0 to support vecenv in replay buffer. Please run
+\                poetry run pip install "stable_baselines3==1.8.0" --no-deps"""
         )
     args = parse_args()
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
-
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -144,12 +142,13 @@ poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-
     optimizer = optim.Adam(q_network.parameters(), lr=args.learning_rate)
     target_network = QNetwork(envs).to(device)
     target_network.load_state_dict(q_network.state_dict())
-
+    print(type(envs.single_observation_space))
     rb = ReplayBuffer(
         args.buffer_size,
         envs.single_observation_space,
         envs.single_action_space,
-        device,
+        device=device,
+        n_envs=args.num_envs,
         optimize_memory_usage=True,
         handle_timeout_termination=False,
     )
@@ -157,6 +156,7 @@ poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-
 
     # TRY NOT TO MODIFY: start the game
     obs = envs.reset()
+    checkpoint_delta = args.total_timesteps // args.num_checkpoints if args.num_checkpoints > 0 else  args.total_timesteps  + 2
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
         epsilon = linear_schedule(
@@ -176,7 +176,7 @@ poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, done, infos = envs.step(actions)
-        done = np.logical_or(rewards != 0, done, dtype=np.float32)
+        done = np.logical_or(rewards != 0, done).astype(float)
 
         for idx, item in enumerate(infos):
             player_idx = idx % 2
@@ -197,6 +197,8 @@ poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         real_next_obs = next_obs.copy()
+
+        # We need to iterate over all environment
         rb.add(obs, real_next_obs, actions, rewards, done, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -240,6 +242,11 @@ poetry run pip install "stable_baselines3==2.0.0a1" "gymnasium[atari,accept-rom-
                         args.tau * q_network_param.data
                         + (1.0 - args.tau) * target_network_param.data
                     )
+            # Checkpoint
+            if global_step % checkpoint_delta == 0:
+                model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model_{global_step}"
+                torch.save(q_network.state_dict(), model_path)
+                print(f"checkpoint model saved to {model_path}")
 
     if args.save_model:
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
