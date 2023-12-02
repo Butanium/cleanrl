@@ -34,6 +34,7 @@ def parse_args():
         help="the entity (team) of wandb's project")
     parser.add_argument("--capture-video", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to capture videos of the agent performances (check out `videos` folder)")
+    parser.add_argument("--load-model", type=str, default="", help="the path to load the model from")
     parser.add_argument("--save-model", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="whether to save model into the `runs/{run_name}` folder")
     parser.add_argument("--num-checkpoints", type=int, default=0, help="number of checkpoint of the model to save")
@@ -89,6 +90,7 @@ class Agent(nn.Module):
     def __init__(self, envs, share_network=False):
         super().__init__()
         self.actor_network = atari_network(orth_init=True)
+        self.share_network = share_network
         if share_network:
             self.critic_network = self.actor_network
         else:
@@ -114,6 +116,11 @@ class Agent(nn.Module):
             probs.entropy(),
             self.critic(self.critic_network(x.permute((0, 3, 1, 2)))),
         )
+    
+    def load(self, path):
+        self.load_state_dict(torch.load(path))
+        if self.share_network:
+            self.critic_network = self.actor_network            
 
 
 if __name__ == "__main__":
@@ -149,6 +156,8 @@ if __name__ == "__main__":
     # env setup
     envs = get_env(args, run_name)
     agent = Agent(envs, args.share_network).to(device)
+    if args.load_model != "":
+        agent.load(args.load_model)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
